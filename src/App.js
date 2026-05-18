@@ -55,9 +55,10 @@ function getDiaHoy() {
 }
 
 const PLANES = {
-  TRANSFORMACION: { label:"Transformación", dias:3, precio:52000 },
-  BIENESTAR:      { label:"Bienestar",      dias:2, precio:46000 },
-  ARRANQUE:       { label:"Arranque",       dias:1, precio:41000 }
+  TRANSFORMACION: { label:"Transformación", dias:3, precio:55000 },
+  BIENESTAR:      { label:"Bienestar",      dias:2, precio:49000 },
+  ARRANQUE:       { label:"Arranque",       dias:1, precio:44000 }
+  PRUEBA:         { label:"Clase de Prueba", dias:1, precio:15000 }
 };
 
 function getPlan(key) {
@@ -91,6 +92,7 @@ var C = {
 function pcolor(plan) {
   if (plan === "TRANSFORMACION") return C.charcoal;   // carbón del logo
   if (plan === "ARRANQUE") return C.accent2;           // azul grisáceo
+  if (plan === "PRUEBA") return "#9b59b6";
   return C.header;                                     // teal principal
 }
 
