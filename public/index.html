@@ -1,0 +1,37 @@
+<!DOCTYPE html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+    <meta name="theme-color" content="#2d8c7e" />
+    <meta name="description" content="Sistema de gestión Studio LC Pilates" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="LC Pilates" />
+    <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
+    <link rel="apple-touch-icon" href="%PUBLIC_URL%/icon-192.png" />
+    <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=Righteous&display=swap" rel="stylesheet" />
+    <title>Studio LC Pilates</title>
+    <style>
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      body { font-family: 'Nunito', sans-serif; background: #f0f7f6; -webkit-tap-highlight-color: transparent; }
+      button { -webkit-user-select: none; user-select: none; }
+      ::-webkit-scrollbar { width: 4px; }
+      ::-webkit-scrollbar-track { background: #f0f7f6; }
+      ::-webkit-scrollbar-thumb { background: #3a9e8f; border-radius: 4px; }
+    </style>
+  </head>
+  <body>
+    <noscript>Necesitás JavaScript para usar esta app.</noscript>
+    <div id="root"></div>
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', function() {
+          navigator.serviceWorker.register('/sw.js')
+            .then(function(reg) { console.log('SW registrado:', reg.scope); })
+            .catch(function(err) { console.log('SW error:', err); });
+        });
+      }
+    </script>
+  </body>
+</html>
