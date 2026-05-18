@@ -1,0 +1,25 @@
+{
+  "short_name": "LC Pilates",
+  "name": "Studio LC Pilates",
+  "description": "Sistema de gestión Studio LC Pilates",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "type": "image/png",
+      "sizes": "192x192",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512",
+      "purpose": "any maskable"
+    }
+  ],
+  "start_url": ".",
+  "display": "standalone",
+  "orientation": "portrait",
+  "theme_color": "#2d8c7e",
+  "background_color": "#f0f7f6",
+  "lang": "es-AR"
+}
