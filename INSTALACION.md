@@ -1,6 +1,6 @@
 # 🧘 Studio LC Pilates — Guía de instalación
 
-## Lo que vas a tener al final
+## Lo que vas a tener al final 
 - App instalada en tu celular como si fuera nativa
 - Datos guardados en la nube (Firebase), disponibles siempre
 - Funciona sin internet (modo offline con los últimos datos)
