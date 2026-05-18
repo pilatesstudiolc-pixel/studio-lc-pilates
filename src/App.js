@@ -57,7 +57,7 @@ function getDiaHoy() {
 const PLANES = {
   TRANSFORMACION: { label:"Transformación", dias:3, precio:55000 },
   BIENESTAR:      { label:"Bienestar",      dias:2, precio:49000 },
-  ARRANQUE:       { label:"Arranque",       dias:1, precio:44000 }
+  ARRANQUE:       { label:"Arranque",       dias:1, precio:44000 },
   PRUEBA:         { label:"Clase de Prueba", dias:1, precio:15000 }
 };
 
