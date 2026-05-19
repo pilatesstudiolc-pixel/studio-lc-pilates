@@ -92,7 +92,7 @@ var C = {
 function pcolor(plan) {
   if (plan === "TRANSFORMACION") return C.charcoal;   // carbón del logo
   if (plan === "ARRANQUE") return C.accent2;           // azul grisáceo
-  if (plan === "PRUEBA") return "#9b59b6";
+  if (plan === "PRUEBA") return "#9b59b6";             // violeta
   return C.header;                                     // teal principal
 }
 
@@ -288,9 +288,12 @@ export default function App() {
   var [eForm, setEForm] = useState(null);
   var [delId, setDelId] = useState(null);
   var [pagoA, setPagoA] = useState(null);
+  var [pagoEditId, setPagoEditId] = useState(null);
   var [pMes, setPMes] = useState("");
   var [pagoParts, setPagoParts] = useState([{ metodo:"Efectivo", importe:"" }]);
   var [modalCambioTurno, setModalCambioTurno] = useState(null);
+  var [filtroMetodo, setFiltroMetodo] = useState("TODOS");
+  var [whatsappPago, setWhatsappPago] = useState(null);
 
   // ── Cargar datos de Firebase al iniciar ──────────────────────
   useEffect(function() {
@@ -342,14 +345,15 @@ export default function App() {
 
   function asigRec(alumno) {
     if (!recSlot) return;
-    var tit = "";
     var slots = (cd[recSlot.h] || []);
-    if (slots[recSlot.si]) tit = slots[recSlot.si].nombre;
+    var slot = slots[recSlot.si];
+    var tit = slot ? slot.nombre : "";
     setSlots(dia, recSlot.h, function(s, i) {
       if (i !== recSlot.si) return s;
+      // Si es lugar libre, poner como recupero igualmente
       return { nombre: s.nombre, asistencia: s.asistencia, recupero: { nombre: alumno.nombre, asistencia: false } };
     });
-    setHist(function(p) { return [{ fecha: today(), tipo: "RECUPERO", alumno: alumno.nombre, det: dia + " " + recSlot.h + " (tit: " + tit + ")" }].concat(p); });
+    setHist(function(p) { return [{ fecha: today(), tipo: "RECUPERO", alumno: alumno.nombre, det: dia + " " + recSlot.h + (tit ? " (tit: " + tit + ")" : " (lugar libre)") }].concat(p); });
     setRecSlot(null);
     setRecBusq("");
     msg("Recupero: " + alumno.nombre + " ✓");
@@ -402,9 +406,24 @@ export default function App() {
 
   function guardaEdit() {
     if (!eForm) return;
-    setAlumnos(function(p) { return p.map(function(a) { return a.id === eForm.id ? eForm : a; }); });
-    if (detA && detA.id === eForm.id) setDetA(eForm);
-    setHist(function(p) { return [{ fecha: today(), tipo: "EDICIÓN", alumno: eForm.nombre, det: "Datos actualizados" }].concat(p); });
+    var alumnoActualizado = Object.assign({}, eForm);
+    delete alumnoActualizado.nuevoTurnoD;
+    delete alumnoActualizado.nuevoTurnoH;
+    delete alumnoActualizado._planOriginal;
+    setAlumnos(function(p) { return p.map(function(a) { return a.id === eForm.id ? alumnoActualizado : a; }); });
+    if (detA && detA.id === eForm.id) setDetA(alumnoActualizado);
+    // Si cambió plan y hay turno nuevo para agregar
+    if (eForm.nuevoTurnoD && eForm.nuevoTurnoH) {
+      setHor(function(prev) {
+        var nd = JSON.parse(JSON.stringify(prev));
+        if (!nd[eForm.nuevoTurnoD] || !nd[eForm.nuevoTurnoD][eForm.nuevoTurnoH]) return prev;
+        var idx = -1;
+        nd[eForm.nuevoTurnoD][eForm.nuevoTurnoH].forEach(function(s, i) { if (idx === -1 && !s.nombre.trim()) idx = i; });
+        if (idx !== -1) nd[eForm.nuevoTurnoD][eForm.nuevoTurnoH][idx] = { nombre: eForm.nombre, asistencia: false, recupero: null };
+        return nd;
+      });
+    }
+    setHist(function(p) { return [{ fecha: today(), tipo: "EDICIÓN", alumno: eForm.nombre, det: "Datos actualizados" + (eForm.nuevoTurnoD ? " · Turno agregado: " + eForm.nuevoTurnoD + " " + eForm.nuevoTurnoH : "") }].concat(p); });
     setModal(null);
     msg("Actualizado ✓");
   }
@@ -435,21 +454,39 @@ export default function App() {
 
   function guardaPago() {
     if (!pagoA) return;
+    if (!pMes.trim()) { msg("El mes es obligatorio", "warn"); return; }
     var totalPlan = getPlan(pagoA.plan).precio;
-    var mes = pMes || new Date().toLocaleString("es-AR", { month: "long" });
+    var mes = pMes.trim();
     var partsValidas = pagoParts.filter(function(p) { return p.importe && parseInt(p.importe) > 0; });
     if (partsValidas.length === 0) { partsValidas = [{ metodo: "Efectivo", importe: "" + totalPlan }]; }
     var totalPagado = partsValidas.reduce(function(s, p) { return s + parseInt(p.importe); }, 0);
-    var nuevos = partsValidas.map(function(p) {
-      return { id: nid(pagos), alumnoId: pagoA.id, alumno: pagoA.nombre, plan: pagoA.plan, importe: parseInt(p.importe), metodo: p.metodo, mes: mes, fecha: today() };
-    });
-    setPagos(function(prev) { return nuevos.concat(prev); });
     var resumen = partsValidas.map(function(p) { return p.metodo + " $" + parseInt(p.importe).toLocaleString("es-AR"); }).join(" + ");
     var metodoLabel = partsValidas.length > 1 ? "Mixto" : partsValidas[0].metodo;
-    setAlumnos(function(p) { return p.map(function(a) { return a.id === pagoA.id ? Object.assign({}, a, { estadoPago: "SI", metodoPago: metodoLabel }) : a; }); });
-    setHist(function(p) { return [{ fecha: today(), tipo: "PAGO", alumno: pagoA.nombre, det: "$" + totalPagado.toLocaleString("es-AR") + " · " + resumen }].concat(p); });
+    if (pagoEditId) {
+      // Editar pago existente
+      setPagos(function(prev) { return prev.map(function(p) {
+        if (p.id !== pagoEditId) return p;
+        return Object.assign({}, p, { importe: parseInt(partsValidas[0].importe) || p.importe, metodo: partsValidas[0].metodo, mes: mes });
+      }); });
+      setAlumnos(function(p) { return p.map(function(a) { return a.id === pagoA.id ? Object.assign({}, a, { estadoPago: "SI", metodoPago: metodoLabel }) : a; }); });
+      msg("Pago actualizado ✓");
+    } else {
+      var nuevos = partsValidas.map(function(p) {
+        return { id: nid(pagos), alumnoId: pagoA.id, alumno: pagoA.nombre, plan: pagoA.plan, importe: parseInt(p.importe), metodo: p.metodo, mes: mes, fecha: today() };
+      });
+      setPagos(function(prev) { return nuevos.concat(prev); });
+      setAlumnos(function(p) { return p.map(function(a) { return a.id === pagoA.id ? Object.assign({}, a, { estadoPago: "SI", metodoPago: metodoLabel }) : a; }); });
+      setHist(function(p) { return [{ fecha: today(), tipo: "PAGO", alumno: pagoA.nombre, det: "$" + totalPagado.toLocaleString("es-AR") + " · " + resumen }].concat(p); });
+      // Preparar WhatsApp si tiene contacto
+      var alumnoData = null;
+      alumnos.forEach(function(a){ if(a.id===pagoA.id) alumnoData=a; });
+      if (alumnoData && alumnoData.contacto) {
+        setWhatsappPago({ nombre: pagoA.nombre, contacto: alumnoData.contacto, importe: totalPagado, metodo: resumen, mes: mes, plan: getPlan(pagoA.plan).label, fecha: (function(){ var n=new Date(); return n.toLocaleDateString('es-AR') + ' · ' + String(n.getHours()).padStart(2,'0') + ':' + String(n.getMinutes()).padStart(2,'0') + 'hs'; })() });
+      }
+      msg("Pago registrado ✓");
+    }
     setPagoA(null);
-    msg("Pago registrado ✓");
+    setPagoEditId(null);
   }
 
   function cambiarTurno(alumno, diaViejo, horaVieja, diaNuevo, horaNueva) {
@@ -691,7 +728,7 @@ export default function App() {
                         {pr ? "✓ Pres." : "Ausente"}
                       </button>
                     )}
-                    {eTA && !isR && (
+                    {(eTA || em) && !isR && (
                       <button onClick={function() { setRecSlot({ h:selH, si:si }); setRecBusq(""); }} style={{ padding:"4px 10px", borderRadius:20, border:"2px solid "+C.sky, background:C.sky+"22", color:C.sky, cursor:"pointer", fontSize:11, fontFamily:FONT, fontWeight:800 }}>🔄</button>
                     )}
                     {isR && (
@@ -720,11 +757,14 @@ export default function App() {
                   <div onClick={function() { setDetA(a); }} style={{ cursor:"pointer" }}><Av n={a.nombre} plan={a.plan} /></div>
                   <div onClick={function() { setDetA(a); }} style={{ flex:1, minWidth:0, cursor:"pointer" }}>
                     <div style={{ fontSize:14, fontWeight:700, color:C.dark, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{a.nombre}</div>
-                    <div style={{ fontSize:10, color:C.soft, fontWeight:600 }}>{getPlan(a.plan).label} · {a.nivel} {a.estadoPago==="SI" ? "· ✅" : "· ⏳"}</div>
+                    <div style={{ fontSize:10, color:C.soft, fontWeight:600, display:"flex", alignItems:"center", gap:4 }}>
+                      {getPlan(a.plan).label} · {a.nivel}
+                      {a.estadoPago==="SI" ? <span style={{background:C.header,color:"#fff",padding:"1px 7px",borderRadius:20,fontSize:9,fontWeight:800,letterSpacing:1}}>PAGADO</span> : <span style={{background:"#fff3e0",color:C.accent2,padding:"1px 7px",borderRadius:20,fontSize:9,fontWeight:800}}>⏳ PENDIENTE</span>}
+                    </div>
                   </div>
                   <div style={{ display:"flex", gap:5, flexShrink:0 }}>
-                    <button onClick={function() { setPagoA(a); setPagoParts([{metodo:"Efectivo",importe:""}]); setPMes(""); }} style={{ padding:"4px 8px", borderRadius:8, border:"2px solid "+C.teal, background:C.teal+"22", cursor:"pointer", fontSize:12, color:C.teal }}>💰</button>
-                    <button onClick={function() { setEForm(Object.assign({}, a)); setModal("edit"); }} style={{ padding:"4px 8px", borderRadius:8, border:"2px solid "+C.border, background:C.bg, cursor:"pointer", fontSize:12 }}>✏️</button>
+                    <button onClick={function() { setPagoA(a); setPagoEditId(null); setPagoParts([{metodo:"Efectivo",importe:""}]); setPMes(""); }} style={{ padding:"4px 8px", borderRadius:8, border:"2px solid "+C.teal, background:C.teal+"22", cursor:"pointer", fontSize:12, color:C.teal }}>💰</button>
+                    <button onClick={function() { setEForm(Object.assign({}, a, {_planOriginal: a.plan})); setModal("edit"); }} style={{ padding:"4px 8px", borderRadius:8, border:"2px solid "+C.border, background:C.bg, cursor:"pointer", fontSize:12 }}>✏️</button>
                     <button onClick={function() { setDelId(a.id); }} style={{ padding:"4px 8px", borderRadius:8, border:"2px solid "+C.danger+"44", background:C.danger+"11", cursor:"pointer", fontSize:12, color:C.danger }}>🗑</button>
                   </div>
                 </div>
@@ -758,8 +798,8 @@ export default function App() {
               })}
             </div>
             <div style={{ display:"flex", gap:7 }}>
-              <button onClick={function() { setPagoA(detA); setPagoParts([{metodo:"Efectivo",importe:""}]); setPMes(""); }} style={{ flex:1, padding:"10px", border:"none", borderRadius:12, background:"linear-gradient(135deg,"+C.header+","+C.accent+")", color:"#fff", cursor:"pointer", fontFamily:FONT, fontWeight:800 }}>💰 Pago</button>
-              <button onClick={function() { setEForm(Object.assign({}, detA)); setModal("edit"); }} style={{ flex:1, padding:"10px", border:"2px solid "+C.border, borderRadius:12, background:C.card, cursor:"pointer", fontFamily:FONT, fontWeight:700, color:C.dark }}>✏️ Editar</button>
+              <button onClick={function() { setPagoA(detA); setPagoEditId(null); setPagoParts([{metodo:"Efectivo",importe:""}]); setPMes(""); }} style={{ flex:1, padding:"10px", border:"none", borderRadius:12, background:"linear-gradient(135deg,"+C.header+","+C.accent+")", color:"#fff", cursor:"pointer", fontFamily:FONT, fontWeight:800 }}>💰 Pago</button>
+              <button onClick={function() { setEForm(Object.assign({}, detA, {_planOriginal: detA.plan})); setModal("edit"); }} style={{ flex:1, padding:"10px", border:"2px solid "+C.border, borderRadius:12, background:C.card, cursor:"pointer", fontFamily:FONT, fontWeight:700, color:C.dark }}>✏️ Editar</button>
               <button onClick={function() { setModalCambioTurno(detA); }} style={{ flex:1, padding:"10px", border:"2px solid "+C.sky, borderRadius:12, background:C.sky+"22", color:C.sky, cursor:"pointer", fontFamily:FONT, fontWeight:800 }}>🔄 Turno</button>
               <button onClick={function() { setDelId(detA.id); }} style={{ padding:"10px 13px", border:"2px solid "+C.danger+"44", borderRadius:12, background:C.danger+"11", cursor:"pointer", color:C.danger, fontSize:14 }}>🗑</button>
             </div>
@@ -769,7 +809,8 @@ export default function App() {
         {/* PAGOS */}
         {tab === "pagos" && (
           <div>
-            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:9, marginBottom:13 }}>
+            {/* Resumen por método */}
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:9, marginBottom:11 }}>
               <div style={{ background:"linear-gradient(135deg,"+C.header+","+C.accent+")", borderRadius:14, padding:"11px 13px", textAlign:"center" }}>
                 <div style={{ fontSize:18, fontWeight:900, color:"#fff" }}>${pagos.reduce(function(s,p){return s+p.importe;},0).toLocaleString("es-AR")}</div>
                 <div style={{ fontSize:9, color:"rgba(255,255,255,.8)", textTransform:"uppercase", fontWeight:700 }}>Total recaudado</div>
@@ -779,8 +820,32 @@ export default function App() {
                 <div style={{ fontSize:9, color:"rgba(255,255,255,.8)", textTransform:"uppercase", fontWeight:700 }}>Pagos registrados</div>
               </div>
             </div>
+            {/* Totales por método */}
+            <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:7, marginBottom:12 }}>
+              {["Efectivo","Transferencia","Tarjeta"].map(function(m) {
+                var tot = pagos.filter(function(p){return p.metodo===m;}).reduce(function(s,p){return s+p.importe;},0);
+                var cant = pagos.filter(function(p){return p.metodo===m;}).length;
+                var colors = {"Efectivo":["#27ae60","#d5f5e3"],"Transferencia":[C.accent2,"#dceef5"],"Tarjeta":["#8e44ad","#f0e6f8"]};
+                var col = colors[m][0]; var bg = colors[m][1];
+                return (
+                  <div key={m} style={{ background:bg, border:"2px solid "+col+"55", borderRadius:12, padding:"9px 8px", textAlign:"center", cursor:"pointer", opacity: filtroMetodo===m||filtroMetodo==="TODOS"?1:0.5 }}
+                    onClick={function(){setFiltroMetodo(filtroMetodo===m?"TODOS":m);}}>
+                    <div style={{ fontSize:11, fontWeight:900, color:col }}>${tot.toLocaleString("es-AR")}</div>
+                    <div style={{ fontSize:8, color:col, fontWeight:700, textTransform:"uppercase" }}>{m}</div>
+                    <div style={{ fontSize:9, color:col, opacity:.7 }}>{cant} pago{cant!==1?"s":""}</div>
+                  </div>
+                );
+              })}
+            </div>
+            {/* Filtro activo */}
+            {filtroMetodo !== "TODOS" && (
+              <div style={{ background:C.header+"15", border:"2px solid "+C.header, borderRadius:10, padding:"7px 12px", marginBottom:10, display:"flex", justifyContent:"space-between", alignItems:"center" }}>
+                <span style={{ fontSize:12, color:C.header, fontWeight:800 }}>Filtrando: {filtroMetodo}</span>
+                <button onClick={function(){setFiltroMetodo("TODOS");}} style={{ background:"none", border:"none", color:C.header, cursor:"pointer", fontWeight:800, fontSize:13 }}>✕</button>
+              </div>
+            )}
             {pagos.length === 0 && <div style={{ fontSize:13, color:C.soft, textAlign:"center", padding:22, fontWeight:600 }}>Sin pagos registrados aún 💸</div>}
-            {pagos.map(function(p, i) {
+            {pagos.filter(function(p){return filtroMetodo==="TODOS"||p.metodo===filtroMetodo;}).map(function(p, i) {
               return (
                 <div key={i} style={{ background:C.card, border:"2px solid "+C.border, borderRadius:13, padding:"9px 13px", marginBottom:7, display:"flex", alignItems:"center", gap:9, boxShadow:"0 1px 6px rgba(108,63,197,.05)" }}>
                   <Av n={p.alumno} plan={p.plan} size={30} />
@@ -788,7 +853,13 @@ export default function App() {
                     <div style={{ fontSize:12, fontWeight:700, color:C.dark, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{p.alumno}</div>
                     <div style={{ fontSize:10, color:C.soft, fontWeight:600 }}>{p.mes} · {p.metodo} · {p.fecha}</div>
                   </div>
-                  <div style={{ fontSize:14, fontWeight:900, color:C.teal }}>${p.importe.toLocaleString("es-AR")}</div>
+                  <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                    <div style={{ fontSize:14, fontWeight:900, color:C.teal }}>${p.importe.toLocaleString("es-AR")}</div>
+                    <button onClick={function(){
+                      var a = null; alumnos.forEach(function(x){if(x.id===p.alumnoId)a=x;});
+                      if(a){setPagoA(a);setPagoEditId(p.id);setPMes(p.mes);setPagoParts([{metodo:p.metodo,importe:""+p.importe}]);}
+                    }} style={{padding:"2px 7px",borderRadius:8,border:"2px solid "+C.accent2,background:C.accent2+"22",cursor:"pointer",fontSize:11,color:C.accent2,fontWeight:700}}>✏️</button>
+                  </div>
                 </div>
               );
             })}
@@ -990,11 +1061,26 @@ export default function App() {
             </div>
             <div style={{ marginBottom:14 }}>
               <div style={{ fontSize:10, color:C.header, textTransform:"uppercase", fontWeight:800, letterSpacing:1, marginBottom:7 }}>Plan</div>
-              <div style={{ display:"flex", gap:7 }}>
+              <div style={{ display:"flex", gap:7, marginBottom:8 }}>
                 {Object.keys(PLANES).map(function(k){
-                  return <button key={k} onClick={function(){setEForm(Object.assign({},eForm,{plan:k}));}} style={{ flex:1, padding:"8px 4px", borderRadius:10, border:"2px solid "+(eForm.plan===k?pcolor(k):C.border), background:eForm.plan===k?pcolor(k):C.card, color:eForm.plan===k?"#fff":C.soft, cursor:"pointer", fontSize:10, fontFamily:FONT, fontWeight:800 }}>{PLANES[k].label}</button>;
+                  return <button key={k} onClick={function(){setEForm(Object.assign({},eForm,{plan:k,nuevoTurnoD:"",nuevoTurnoH:""}));}} style={{ flex:1, padding:"8px 4px", borderRadius:10, border:"2px solid "+(eForm.plan===k?pcolor(k):C.border), background:eForm.plan===k?pcolor(k):C.card, color:eForm.plan===k?"#fff":C.soft, cursor:"pointer", fontSize:10, fontFamily:FONT, fontWeight:800 }}>{PLANES[k].label}</button>;
                 })}
               </div>
+              {eForm && PLANES[eForm.plan] && PLANES[eForm.plan].dias > (PLANES[eForm._planOriginal] ? PLANES[eForm._planOriginal].dias : PLANES[eForm.plan].dias) && (
+                <div style={{ background:C.bg, border:"2px solid "+C.accent2, borderRadius:10, padding:"10px 12px" }}>
+                  <div style={{ fontSize:10, color:C.accent2, fontWeight:800, marginBottom:6 }}>Agregar turno extra</div>
+                  <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:7 }}>
+                    <select value={eForm.nuevoTurnoD||""} onChange={function(e){setEForm(Object.assign({},eForm,{nuevoTurnoD:e.target.value}));}} style={{ padding:"8px", border:"2px solid "+C.border, borderRadius:8, fontSize:12, fontFamily:FONT, fontWeight:600, background:C.card, color:C.dark }}>
+                      <option value="">Día</option>
+                      {DIAS.map(function(d){return <option key={d}>{d}</option>;})}
+                    </select>
+                    <select value={eForm.nuevoTurnoH||""} onChange={function(e){setEForm(Object.assign({},eForm,{nuevoTurnoH:e.target.value}));}} style={{ padding:"8px", border:"2px solid "+C.border, borderRadius:8, fontSize:12, fontFamily:FONT, fontWeight:600, background:C.card, color:C.dark }}>
+                      <option value="">Hora</option>
+                      {HORAS.map(function(h){return <option key={h}>{h}</option>;})}
+                    </select>
+                  </div>
+                </div>
+              )}
             </div>
             <div style={{ marginBottom:10 }}>
               <div style={{ fontSize:10, color:C.header, textTransform:"uppercase", fontWeight:800, letterSpacing:1, marginBottom:5 }}>Contacto</div>
@@ -1016,11 +1102,18 @@ export default function App() {
       {pagoA && (
         <div style={{ position:"fixed", inset:0, background:"rgba(45,45,94,.6)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:999, padding:12 }}>
           <div style={{ background:C.card, borderRadius:18, padding:20, width:"100%", maxWidth:400, fontFamily:FONT, maxHeight:"90vh", overflowY:"auto", boxShadow:"0 20px 60px rgba(108,63,197,.3)" }}>
-            <div style={{ fontSize:16, fontWeight:900, color:C.dark, marginBottom:3 }}>💰 Registrar pago</div>
+            <div style={{ fontSize:16, fontWeight:900, color:C.dark, marginBottom:3 }}>{pagoEditId ? "✏️ Editar pago" : "💰 Registrar pago"}</div>
             <div style={{ fontSize:11, color:C.soft, marginBottom:4, fontWeight:600 }}>{pagoA.nombre} · {getPlan(pagoA.plan).label}</div>
+            <div style={{ fontSize:11, color:C.accent2, marginBottom:4, fontWeight:600 }}>
+              📅 Turnos: {(function(){
+                var ts=[];
+                DIAS.forEach(function(d){HORAS.forEach(function(h){var sl=(hor[d]&&hor[d][h])||[];sl.forEach(function(s){if(s.nombre===pagoA.nombre)ts.push(d.slice(0,3)+" "+h);});});});
+                return ts.length>0?ts.join(" · "):"Sin turnos asignados";
+              })()}
+            </div>
             <div style={{ fontSize:13, color:C.teal, fontWeight:800, marginBottom:14 }}>Total plan: ${getPlan(pagoA.plan).precio.toLocaleString("es-AR")}</div>
-            <div style={{ fontSize:10, color:C.header, textTransform:"uppercase", fontWeight:800, letterSpacing:1, marginBottom:5 }}>Mes</div>
-            <input value={pMes} onChange={function(e){setPMes(e.target.value);}} placeholder="Abril" style={{ width:"100%", padding:"10px 13px", border:"2px solid "+C.border, borderRadius:10, fontSize:14, fontFamily:FONT, fontWeight:600, boxSizing:"border-box", marginBottom:13, outline:"none", color:C.dark }} />
+            <div style={{ fontSize:10, color:C.danger, textTransform:"uppercase", fontWeight:800, letterSpacing:1, marginBottom:5 }}>Mes * (obligatorio)</div>
+            <input value={pMes} onChange={function(e){setPMes(e.target.value);}} placeholder="Ej: Mayo 2026" style={{ width:"100%", padding:"10px 13px", border:"2px solid "+(pMes.trim()?C.border:C.danger), borderRadius:10, fontSize:14, fontFamily:FONT, fontWeight:600, boxSizing:"border-box", marginBottom:13, outline:"none", color:C.dark }} />
             <div style={{ fontSize:10, color:C.header, textTransform:"uppercase", fontWeight:800, letterSpacing:1, marginBottom:8 }}>Partes del pago</div>
             {pagoParts.map(function(part, i) {
               return (
@@ -1039,7 +1132,7 @@ export default function App() {
                       );
                     })}
                   </div>
-                  <input type="number" value={part.importe} onChange={function(e){ var np = pagoParts.map(function(p,j){return j===i?Object.assign({},p,{importe:e.target.value}):p;}); setPagoParts(np); }} placeholder={"Importe (ej: " + Math.round(getPlan(pagoA.plan).precio / pagoParts.length) + ")"} style={{ width:"100%", padding:"9px 12px", border:"2px solid "+C.border, borderRadius:9, fontSize:13, fontFamily:FONT, fontWeight:600, boxSizing:"border-box", outline:"none", color:C.dark }} />
+                  <input type="number" value={part.importe} onChange={function(e){ var np = pagoParts.map(function(p,j){return j===i?Object.assign({},p,{importe:e.target.value}):p;}); setPagoParts(np); }} placeholder={"Importe (ej: " + Math.round(getPlan(pagoA.plan).precio / pagoParts.length) + ")"} defaultValue={i===0&&!part.importe?getPlan(pagoA.plan).precio:undefined} style={{ width:"100%", padding:"9px 12px", border:"2px solid "+C.border, borderRadius:9, fontSize:13, fontFamily:FONT, fontWeight:600, boxSizing:"border-box", outline:"none", color:C.dark }} />
                 </div>
               );
             })}
@@ -1147,7 +1240,42 @@ export default function App() {
         </div>
       )}
 
-            {/* TOAST */}
+            {/* MODAL WHATSAPP CONFIRMACION */}
+      {whatsappPago && (
+        <div style={{ position:"fixed", inset:0, background:"rgba(45,45,94,.6)", display:"flex", alignItems:"center", justifyContent:"center", zIndex:999, padding:12 }}>
+          <div style={{ background:C.card, borderRadius:18, padding:22, width:"100%", maxWidth:380, fontFamily:FONT, boxShadow:"0 20px 60px rgba(0,0,0,.3)" }}>
+            <div style={{ fontSize:32, textAlign:"center", marginBottom:8 }}>✅</div>
+            <div style={{ fontSize:16, fontWeight:900, color:C.dark, textAlign:"center", marginBottom:4 }}>Pago registrado</div>
+            <div style={{ fontSize:12, color:C.soft, textAlign:"center", marginBottom:16, fontWeight:600 }}>{whatsappPago.nombre} · {whatsappPago.plan}</div>
+            <div style={{ background:C.bg, border:"2px solid "+C.border, borderRadius:12, padding:"12px 14px", marginBottom:16, fontSize:12, color:C.dark, lineHeight:1.6 }}>
+              <div style={{ fontWeight:800, marginBottom:4, color:C.header }}>Vista previa del mensaje:</div>
+              <div>Hola {whatsappPago.nombre.split(" ")[0]} 👋</div>
+              <div>Te confirmamos el pago de <strong>${whatsappPago.importe.toLocaleString("es-AR")}</strong> correspondiente a <strong>{whatsappPago.mes}</strong> ({whatsappPago.plan}).</div>
+              <div>Método: {whatsappPago.metodo}</div>
+              <div>Fecha: {whatsappPago.fecha}</div>
+              <div>¡Gracias! Studio LC Pilates 🧘</div>
+            </div>
+            <button onClick={function() {
+              var tel = whatsappPago.contacto.replace(/\D/g,"");
+              if (tel.length <= 10) tel = "549" + tel;
+              var msg = "Hola " + whatsappPago.nombre.split(" ")[0] + " 👋%0A" +
+                "Te confirmamos el pago de $" + whatsappPago.importe.toLocaleString("es-AR") + " correspondiente a " + whatsappPago.mes + " (" + whatsappPago.plan + ").%0A" +
+                "Método: " + whatsappPago.metodo + "%0A" +
+                "Fecha: " + whatsappPago.fecha + "%0A" +
+                "¡Gracias! Studio LC Pilates 🧘";
+              window.open("https://wa.me/" + tel + "?text=" + msg, "_blank");
+              setWhatsappPago(null);
+            }} style={{ width:"100%", padding:"13px", border:"none", borderRadius:12, background:"#25D366", color:"#fff", cursor:"pointer", fontFamily:FONT, fontWeight:900, fontSize:15, marginBottom:9 }}>
+              📱 Enviar por WhatsApp
+            </button>
+            <button onClick={function(){setWhatsappPago(null);}} style={{ width:"100%", padding:"11px", border:"2px solid "+C.border, borderRadius:11, background:C.bg, cursor:"pointer", fontFamily:FONT, fontWeight:700, color:C.soft }}>
+              Omitir
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* TOAST */}
       {toast && (
         <div style={{ position:"fixed", bottom:20, left:"50%", transform:"translateX(-50%)", background:toast.t==="warn"?"linear-gradient(135deg,"+C.danger+",#ff6b81)":"linear-gradient(135deg,"+C.header+","+C.accent+")", color:"#fff", padding:"11px 22px", borderRadius:30, fontSize:13, fontFamily:FONT, fontWeight:800, zIndex:1000, whiteSpace:"nowrap", boxShadow:"0 8px 24px rgba(0,0,0,.2)" }}>
           {toast.m}
