@@ -14,7 +14,7 @@ const MESES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto"
 function getLunesSemana() {
   var hoy = new Date();
   var diaSemana = hoy.getDay(); // 0=dom, 1=lun ... 6=sab
-  var diffLunes = diaSemana === 0 ? -6 : 1 - diaSemana;
+  var diffLunes = diaSemana === 0 ? 0 : 1 - diaSemana;
   var lunes = new Date(hoy);
   lunes.setDate(hoy.getDate() + diffLunes);
   return lunes;
