@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { cargarTodo, guardarAlumnos, guardarHorarios, guardarPagos, guardarHistorial } from "./firebase";
 
-const DIAS = ["LUNES","MARTES","MIÉRCOLES","JUEVES","VIERNES"];
+const DIAS = ["LUNES","MARTES","MIÉRCOLES","JUEVES","VIERNES","SÁBADO"];
 const DS = ["Lun","Mar","Mié","Jue","Vie"];
 const HORAS = ["8:00","9:00","10:00","11:00","14:00","15:00","16:00","17:00","18:00","19:00"];
 const SLOTS = 5;
