@@ -24,7 +24,7 @@ function getLunesSemana() {
 function getFechasSemana() {
   var lunes = getLunesSemana();
   var fechas = [];
-  for (var i = 0; i < 5; i++) {
+  for (var i = 0; i < 6; i++) {
     var d = new Date(lunes);
     d.setDate(lunes.getDate() + i);
     fechas.push(d);
