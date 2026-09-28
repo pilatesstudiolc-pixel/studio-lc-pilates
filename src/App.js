@@ -20,7 +20,7 @@ function getLunesSemana() {
   return lunes;
 }
 
-// Devuelve array de fechas Lun-Vie de la semana actual
+// Devuelve array de fechas Lun-Sab de la semana actual
 function getFechasSemana() {
   var lunes = getLunesSemana();
   var fechas = [];
@@ -50,7 +50,7 @@ function getSemanaLabel(fechas) {
 // Detecta qué día de la semana es hoy (para marcar el activo por defecto)
 function getDiaHoy() {
   var hoy = new Date().getDay();
-  var map = { 1:"LUNES", 2:"MARTES", 3:"MIÉRCOLES", 4:"JUEVES", 5:"VIERNES" };
+  var map = { 1:"LUNES", 2:"MARTES", 3:"MIÉRCOLES", 4:"JUEVES", 5:"VIERNES", 6:"SÁBADO"};
   return map[hoy] || "LUNES";
 }
 
